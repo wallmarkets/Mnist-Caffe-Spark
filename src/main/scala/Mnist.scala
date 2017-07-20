@@ -3,6 +3,11 @@ import org.apache.spark.sql.SparkSession
 import org.bytedeco.javacpp.caffe._
 import org.bytedeco.javacpp.FloatPointer
 
+//
+// Solver wraps a lazy creation of CaffeSolver. In this way, a solver
+// instance can be serialized and the wrapped CaffeSolver will be
+// created on each Spark executor.
+//
 class Solver(val home: String) extends Serializable {
   // keep netParam and solverParam as a member here, so that they won't be GC'ed.
   lazy val netParam = new NetParameter()
@@ -24,20 +29,19 @@ object MnistApp {
 
   def main(args: Array[String]) {
 
-    val builder = SparkSession
+    val mnistHome   = sys.env("MNIST_HOME")
+    val numWorkers = args(0).toInt
+
+    val spark = SparkSession
       .builder()
       .appName("Mnist")
-
-    val mnistHome   = sys.env("MNIST_HOME")
-
-    val numWorkers = args(0).toInt
-  
-    val spark = SparkSession.builder.getOrCreate()
+      .getOrCreate()
     import spark.implicits._
     val sc = spark.sparkContext
-    val logger = new Logger(mnistHome + "/training_log_" + System.currentTimeMillis().toString + ".txt")
 
+    val logger = new Logger(mnistHome + "/training_log_" + System.currentTimeMillis().toString + ".txt")
     val loader = new Loader(mnistHome + "/model")
+
     logger.log("loading train data")
     var trainRDD = sc.parallelize(loader.trainImages.zip(loader.trainLabels))
     logger.log("loading test data")
@@ -53,19 +57,24 @@ object MnistApp {
     val numTestData = testRDD.count()
     logger.log("numTestData = " + numTestData.toString)
 
+    // each executor (worker) will own a Solver
     val workers = sc.parallelize(Array.fill(numWorkers)(new Solver(mnistHome)), numWorkers).cache()
+
+    // number of training images for each executor
     var trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true).cache()
+    // training image data for each executor
     var trainPartitionMem   = trainRDD.mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true).cache()
+    // number of testing images for each executor
     val testPartitionSizes  = testRDD .mapPartitions(iter => Iterator.single(iter.size), true).cache()
+    // testing image data for each executor
     val testParititonMem    = testRDD .mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true).cache()
+
     logger.log("trainPartitionSizes = " + trainPartitionSizes.collect().deep.toString)
     logger.log("testPartitionSizes  = " + testPartitionSizes.collect().deep.toString)
 
     logger.log("start obtaining initial net weights.")
-
-    // initialize weights on master
+    // initialize weights (weight of the 1st executor) on master
     var netWeights = workers.map(caffeSolver => caffeSolver.instance.getWeights()).collect()(0)
-
     logger.log("inital net weights obtained.")
 
     var i = 0
@@ -83,11 +92,14 @@ object MnistApp {
             val (data, labels) = dtIt.next
             val size = szIt.next
             var accuracy = 0F
+            // request the network use the testing data
             caffeSolver.instance.setData(data, labels, size)
+            // each call of ForwardPrefilled() consumes `testBatchSize` of data instances
+            // so call `size / testBatchSize` many times.
             for (_ <- 1 to size / testBatchSize) {
               caffeSolver.instance.net().ForwardPrefilled()
             }
-            val out = caffeSolver.instance.getBlobs(List("accuracy", "loss", "prob"))
+            val out = caffeSolver.instance.getBlobs(List("accuracy"))
             accuracy += out("accuracy").data(0)
             Iterator.single(accuracy)
         }.collect()
@@ -108,14 +120,19 @@ object MnistApp {
           val (data, labels) = dtIt.next
           val size = szIt.next
           val t1 = System.currentTimeMillis()
+          // request the network use the testing data         
           caffeSolver.instance.setData(data, labels, size)
+          // each call of Step() consumes `testBatchSize` of data instances, 
+          // for we set `iter_size` in the prototxt to be 1.
           caffeSolver.instance.Step(size / trainBatchSize)
           val t2 = System.currentTimeMillis()
           print(s"iters took ${((t2 - t1) * 1F / 1000F).toString}s, # batches ${size / trainBatchSize}\n")
           Iterator.single(())
       }.count()
       logger.log("collecting weights", i)
+      // collect all weights of all executors
       netWeights = workers.map(caffeSolver => { caffeSolver.instance.getWeights() }).reduce((a, b) => CaffeWeightCollection.add(a, b))
+      // and calculate the average.
       CaffeWeightCollection.scalarDivide(netWeights, 1F * numWorkers)
       logger.log("weight = " + netWeights("conv1")(0).data(0).toString, i)
       i += 1
