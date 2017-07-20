@@ -2,6 +2,7 @@
 
 ## compile
 - it requires a CPU-only caffe of version rc3, which is already available on dev003
+    - or you can build your one from the repo here: https://git.mineway.de/jwu/javacpp-presets/tree/1.2-Caffe-CPUONLY
 - compile by `sbt assembly`
 
 ## execution
