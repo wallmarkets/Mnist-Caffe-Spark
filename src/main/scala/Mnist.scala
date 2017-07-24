@@ -52,33 +52,26 @@ object MnistApp {
 
     logger.log("loading train data")
     var trainRDD = sc.parallelize(loader.trainImages.zip(loader.trainLabels))
-    logger.log("loading test data")
-    var testRDD = sc.parallelize(loader.testImages.zip(loader.testLabels))
-
     logger.log("repartition data")
     trainRDD = trainRDD.repartition(numWorkers)
-    testRDD = testRDD.repartition(numWorkers)
-
     val numTrainData = trainRDD.count()
     logger.log("numTrainData = " + numTrainData.toString)
 
-    val numTestData = testRDD.count()
-    logger.log("numTestData = " + numTestData.toString)
-
     // each executor (worker) will own a Solver
     val workers = sc.parallelize(Array.fill(numWorkers)(new Solver(args, mnistHome)), numWorkers).cache()
-
     // number of training images for each executor
     var trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true).cache()
     // training image data for each executor
     var trainPartitionMem   = trainRDD.mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true).cache()
-    // number of testing images for each executor
-    val testPartitionSizes  = testRDD .mapPartitions(iter => Iterator.single(iter.size), true).cache()
-    // testing image data for each executor
-    val testParititonMem    = testRDD .mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true).cache()
-
     logger.log("trainPartitionSizes = " + trainPartitionSizes.collect().deep.toString)
-    logger.log("testPartitionSizes  = " + testPartitionSizes.collect().deep.toString)
+
+    // master will owner a testing solver
+    import org.bytedeco.javacpp.Loader
+    import org.bytedeco.javacpp.caffe
+    Loader.load(classOf[caffe])
+    val testSolver = new Solver(args, mnistHome)
+    val (testData,testLabl) = makeFloatPointer(loader.testImages.zip(loader.testLabels).iterator)
+    val testSize = loader.testImages.length
 
     logger.log("start obtaining initial net weights.")
     // initialize weights (weight of the 1st executor) on master
@@ -94,31 +87,20 @@ object MnistApp {
 
       if (i % 5 == 0) {
         logger.log("testing", i)
-        val testAccuracies = workers.zipPartitions(testPartitionSizes, testParititonMem) {
-          case (svIt, szIt, dtIt) => 
-            val caffeSolver = svIt.next
-            val (data, labels) = dtIt.next
-            val size = szIt.next
-            var accuracy = 0F
-            // request the network use the testing data
-            caffeSolver.instance.setData(data, labels, size)
-            // each call of ForwardPrefilled() consumes `testBatchSize` of data instances
-            // so call `size / testBatchSize` many times.
-            for (_ <- 1 to size / testBatchSize) {
-              caffeSolver.instance.ForwardPrefilled()
-            }
-            val out = caffeSolver.instance.getBlobs(List("accuracy"))
-            accuracy += out("accuracy").data(0)
-            Iterator.single(accuracy)
-        }.collect()
-        logger.log(s"accuracy: ${testAccuracies.deep}", i)
-        val accuracy = testAccuracies.sum / testAccuracies.length
+        testSolver.instance.setWeights(netWeights)
+        // request the network on master to use the testing data
+        testSolver.instance.setData(testData, testLabl, testSize)
+        var accuracy = 0F
+        // each call of ForwardPrefilled() consumes `testBatchSize` of data instances
+        // so call `size / testBatchSize` many times.
+        val round = testSize / testBatchSize
+        for (_ <- 1 to round) {
+          testSolver.instance.Forward()
+          val out = testSolver.instance.getBlobs(List("accuracy"))
+          accuracy += out("accuracy").data(0)
+        }
+        accuracy = accuracy / round
         logger.log("%.2f".format(100F * accuracy) + "% accuracy", i)
-
-        // logger.log("shuffle the data...", i)
-        // trainRDD = trainRDD.repartition(numWorkers)
-        // trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true)
-        // trainPartitionMem   = trainRDD.mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true)
       }
 
       logger.log("training", i)
@@ -143,6 +125,13 @@ object MnistApp {
       // and calculate the average.
       CaffeWeightCollection.scalarDivide(netWeights, 1F * numWorkers)
       logger.log("weight = " + netWeights("conv1")(0).data(0).toString, i)
+
+      // re-shuffle of the data does not improve the converge speed...
+      // logger.log("shuffle the data...", i)
+      // trainRDD = trainRDD.repartition(numWorkers)
+      // trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true)
+      // trainPartitionMem   = trainRDD.mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true)
+
       i += 1
     }
 

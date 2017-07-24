@@ -12,8 +12,8 @@ class CaffeSolver(solverParam: SolverParameter) {
   val layerNames = List.range(0, numLayers).map(i => caffeNet.layers.get(i).layer_param.name.getString)
   val numLayerBlobs = List.range(0, numLayers).map(i => caffeNet.layers.get(i).blobs().size.toInt)
 
-  def ForwardPrefilled() {
-    caffeNet.ForwardPrefilled()
+  def Forward() {
+    caffeNet.Forward()
   }
 
   def Step(n: Int) {
