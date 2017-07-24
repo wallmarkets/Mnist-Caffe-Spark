@@ -1,18 +1,26 @@
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.SparkSession
 import org.bytedeco.javacpp.caffe._
-import org.bytedeco.javacpp.FloatPointer
+import org.bytedeco.javacpp.{Pointer, IntPointer, PointerPointer, FloatPointer}
 
 //
 // Solver wraps a lazy creation of CaffeSolver. In this way, a solver
 // instance can be serialized and the wrapped CaffeSolver will be
 // created on each Spark executor.
 //
-class Solver(val home: String) extends Serializable {
+class Solver(val args: Array[String], val home: String) extends Serializable {
   // keep netParam and solverParam as a member here, so that they won't be GC'ed.
   lazy val netParam = new NetParameter()
   lazy val solverParam = new SolverParameter()
   lazy val instance = {
+    // import org.bytedeco.javacpp.Loader
+    // import org.bytedeco.javacpp.caffe
+    // Loader.load(classOf[caffe])
+    // val pargc = new IntPointer(Array(1) :_*)
+    // val argv  = new PointerPointer(Array("mnist") : _*)
+    // val pargv = new PointerPointer(Array(argv) : _*)
+    //GlobalInit(pargc, pargv)
+ 
     ReadProtoFromTextFileOrDie(home + "/model/mnist_net.prototxt", netParam)
     ReadSolverParamsFromTextFileOrDie(home + "/model/mnist_solver.prototxt", solverParam)
     solverParam.clear_net()
@@ -58,7 +66,7 @@ object MnistApp {
     logger.log("numTestData = " + numTestData.toString)
 
     // each executor (worker) will own a Solver
-    val workers = sc.parallelize(Array.fill(numWorkers)(new Solver(mnistHome)), numWorkers).cache()
+    val workers = sc.parallelize(Array.fill(numWorkers)(new Solver(args, mnistHome)), numWorkers).cache()
 
     // number of training images for each executor
     var trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true).cache()
@@ -97,7 +105,7 @@ object MnistApp {
             // each call of ForwardPrefilled() consumes `testBatchSize` of data instances
             // so call `size / testBatchSize` many times.
             for (_ <- 1 to size / testBatchSize) {
-              caffeSolver.instance.net().ForwardPrefilled()
+              caffeSolver.instance.ForwardPrefilled()
             }
             val out = caffeSolver.instance.getBlobs(List("accuracy"))
             accuracy += out("accuracy").data(0)

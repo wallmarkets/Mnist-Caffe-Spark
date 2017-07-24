@@ -4,12 +4,21 @@ import org.bytedeco.javacpp.FloatPointer
 import scala.collection.mutable.Map
 import scala.collection.mutable.MutableList
 
-class CaffeSolver(solverParam: SolverParameter) extends FloatSGDSolver(solverParam) {
-  val caffeNet = net()
+class CaffeSolver(solverParam: SolverParameter) {
+  val caffeSolver = FloatSolverRegistry.CreateSolver(solverParam)
+  val caffeNet = caffeSolver.net()
   val numOutputs = caffeNet.num_outputs
   val numLayers = caffeNet.layers().size.toInt
   val layerNames = List.range(0, numLayers).map(i => caffeNet.layers.get(i).layer_param.name.getString)
   val numLayerBlobs = List.range(0, numLayers).map(i => caffeNet.layers.get(i).blobs().size.toInt)
+
+  def ForwardPrefilled() {
+    caffeNet.ForwardPrefilled()
+  }
+
+  def Step(n: Int) {
+    caffeSolver.Step(n)
+  }
 
   def setData(data: FloatPointer, labels: FloatPointer, n: Int) {
     val memorydata = caffeNet.layer_by_name(classOf[FloatMemoryDataLayer], "mnist")
