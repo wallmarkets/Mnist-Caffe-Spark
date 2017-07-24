@@ -34,6 +34,8 @@ class Solver(val args: Array[String], val home: String) extends Serializable {
 object MnistApp {
   val trainBatchSize = 64
   val testBatchSize  = 64
+  val num_batches_per_iter = 5
+  val num_iters_per_round = 20
 
   def main(args: Array[String]) {
 
@@ -85,7 +87,7 @@ object MnistApp {
       logger.log("setting weights on workers", i)
       workers.foreach(caffeSolver => caffeSolver.instance.setWeights(broadcastWeights.value))
 
-      if (i % 5 == 0) {
+      if (i % num_iters_per_round == 0) {
         logger.log("testing", i)
         testSolver.instance.setWeights(netWeights)
         // request the network on master to use the testing data
@@ -114,7 +116,8 @@ object MnistApp {
           caffeSolver.instance.setData(data, labels, size)
           // each call of Step() consumes `testBatchSize` of data instances, 
           // for we set `iter_size` in the prototxt to be 1.
-          caffeSolver.instance.Step(size / trainBatchSize)
+          // we run only <num_batches_per_iter> per iteration.
+          caffeSolver.instance.Step(num_batches_per_iter)
           val t2 = System.currentTimeMillis()
           print(s"iters took ${((t2 - t1) * 1F / 1000F).toString}s, # batches ${size / trainBatchSize}\n")
           Iterator.single(())

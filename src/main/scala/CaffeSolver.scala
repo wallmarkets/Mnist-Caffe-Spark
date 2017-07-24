@@ -11,6 +11,8 @@ class CaffeSolver(solverParam: SolverParameter) {
   val numLayers = caffeNet.layers().size.toInt
   val layerNames = List.range(0, numLayers).map(i => caffeNet.layers.get(i).layer_param.name.getString)
   val numLayerBlobs = List.range(0, numLayers).map(i => caffeNet.layers.get(i).blobs().size.toInt)
+  var dataPointer = None : Option[FloatPointer]
+  var lablPointer = None : Option[FloatPointer]
 
   def Forward() {
     caffeNet.Forward()
@@ -20,10 +22,15 @@ class CaffeSolver(solverParam: SolverParameter) {
     caffeSolver.Step(n)
   }
 
-  def setData(data: FloatPointer, labels: FloatPointer, n: Int) {
-    val memorydata = caffeNet.layer_by_name(classOf[FloatMemoryDataLayer], "mnist")
-    val batchSize  = memorydata.batch_size()
-    memorydata.Reset(data, labels, n / batchSize * batchSize)
+  def setData(data: FloatPointer, labl: FloatPointer, n: Int) {
+    if (!dataPointer.isDefined || !dataPointer.get.equals(data) || 
+        !lablPointer.isDefined || !lablPointer.get.equals(labl)) {
+      val memorydata = caffeNet.layer_by_name(classOf[FloatMemoryDataLayer], "mnist")
+      val batchSize  = memorydata.batch_size()
+      memorydata.Reset(data, labl, n / batchSize * batchSize)
+      dataPointer = Some(data)
+      lablPointer = Some(labl)
+    }
   }
 
   def getBlobs(dataBlobNames: List[String] = List[String]()): Map[String, FloatNDArray] = {
