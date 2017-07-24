@@ -1,8 +1,11 @@
 # MNIST with Caffe on Spark
 
 ## compile
-- it requires a CPU-only caffe of version rc3, which is already available on dev003
-    - or you can build your one from the repo here: https://git.mineway.de/jwu/javacpp-presets/tree/1.2-Caffe-CPUONLY
+- it requires a CPU-only caffe of version 1.0, which is already available on dev003
+    - or you can build your own one,
+        - `git clone https://git.mineway.de/jwu/javacpp-presets`
+        - `git checkout 1.3.3-Caffe-CPUONLY`
+        - `mvn install --projects .,hdf5,opencv,openblas,caffe`
 - compile by `sbt assembly`
 
 ## execution
