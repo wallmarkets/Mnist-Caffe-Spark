@@ -1,9 +1,6 @@
 import org.bytedeco.javacpp.caffe._
 import org.bytedeco.javacpp.FloatPointer
 
-import scala.collection.mutable.Map
-import scala.collection.mutable.MutableList
-
 class CaffeSolver(solverParam: SolverParameter) {
   val caffeSolver = FloatSolverRegistry.CreateSolver(solverParam)
   val caffeNet = caffeSolver.net()
@@ -45,32 +42,34 @@ class CaffeSolver(solverParam: SolverParameter) {
     return outputs
   }
 
-  def getWeights(): Map[String, MutableList[FloatNDArray]] = {
-    val weights = Map[String, MutableList[FloatNDArray]]()
-    for (i <- 0 to numLayers - 1) {
-      val weightList = MutableList[FloatNDArray]()
-      for (j <- 0 to numLayerBlobs(i) - 1) {
-        val blob = caffeNet.layers().get(i).blobs().get(j)
-        val shape = FloatNDArray.getFloatBlobShape(blob)
-        val data = new Array[Float](shape.product)
-        blob.cpu_data.get(data, 0, data.length)
-        weightList += FloatNDArray(data, shape)
+  def getWeights(): CaffeWeightCollection = {
+    val weights = 
+      (0 until numLayers) { case i =>
+        val blobs = caffeNet.layers().get(i).blobs()
+        val weightList = 
+          (0 until numLayerBlobs(i)) map { case j =>
+            val blob = blobs.get(j)
+            val shape = FloatNDArray.getFloatBlobShape(blob)
+            val data = new Array[Float](shape.product)
+            blob.cpu_data.get(data, 0, data.length)
+            FloatNDArray(data, shape)
+          }
+        (layerNames(i), weightList)
       }
-      weights += (layerNames(i) -> weightList)
-    }
-    return weights
+    CaffeWeightCollection(weights)
   }
 
-  def setWeights(weights: Map[String, MutableList[FloatNDArray]]) = {
-    assert(weights.keys.size == numLayers)
+  def setWeights(weights: CaffeWeightCollection) = {
+    assert(weights.col.keys.size == numLayers)
     for (i <- 0 to numLayers - 1) {
+      val blobs = caffeNet.layers().get(i).blobs()
+      val layer = weights.col(layerNames(i))
       for (j <- 0 to numLayerBlobs(i) - 1) {
-        val blob = caffeNet.layers().get(i).blobs().get(j)
-        val source = weights(layerNames(i))(j)
+        val source = layer(j)
         // var shape = FloatNDArray.getFloatBlobShape(blob).deep
         // assert(shape == source.shape.deep) // check that weights are the correct shape
         val flatWeights = source.asFloat
-        blob.mutable_cpu_data.put(flatWeights, 0, flatWeights.length)
+        blobs.get(j).mutable_cpu_data.put(flatWeights, 0, flatWeights.length)
       }
     }
   }

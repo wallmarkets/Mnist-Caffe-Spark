@@ -1,31 +1,34 @@
 import scala.collection.mutable.Map
 import scala.collection.mutable.MutableList
 
+class CaffeWeightCollection(val col: Map[String, MutableList[FloatNDArray]])
+
 object CaffeWeightCollection {
-  def scalarDivide(weights: Map[String, MutableList[FloatNDArray]], v: Float): Unit = {
-    for (name <- weights.keys) {
-      for (j <- 0 to weights(name).length - 1) {
-        weights(name)(j).scalarDivide(v)
+  
+  def apply(): CaffeWeightCollection = {
+    new CaffeWeightCollection(Map[String, MutableList[FloatNDArray]]())
+  }
+
+  def scalarDivide(weights: CaffeWeightCollection, v: Float): Unit = {
+    for (layer <- weights.col.values) {
+      for (param <- layer) {
+        param.scalarDivide(v)
       }
     }
   }
 
-  def add(weights1: Map[String, MutableList[FloatNDArray]], weights2: Map[String, MutableList[FloatNDArray]]): Map[String, MutableList[FloatNDArray]] = {
-    if (weights1.keys != weights2.keys) {
-      throw new Exception("weights1.keys != weights2.keys, weights1.keys = " + weights1.keys.toString + ", and weights2.keys = " + weights2.keys.toString + "\n")
-    }
-    val newWeights = Map[String, MutableList[FloatNDArray]]()
-    for (name <- weights1.keys) {
-      newWeights += (name -> MutableList())
-      if (weights1(name).length != weights2(name).length) {
-        throw new Exception("weights1(name).length != weights2(name).length, name = " + name + ", weights1(name).length = " + weights1(name).length.toString + ", weights2(name).length = " + weights2(name).length.toString)
-      }
-      for (j <- 0 to weights1(name).length - 1) {
-        if (weights1(name)(j).shape.deep != weights2(name)(j).shape.deep) {
-          throw new Exception("weights1(name)(j).shape != weights2(name)(j).shape, name = " + name + ", j = " + j.toString + ", weights1(name)(j).shape = " + weights1(name)(j).shape.deep.toString + ", weights2(name)(j).shape = " + weights2(name)(j).shape.deep.toString)
+  def add(weights1: CaffeWeightCollection, weights2: CaffeWeightCollection): CaffeWeightCollection = {
+    assert(weights1.col.keys == weights2.col.keys)
+    val newWeights = CaffeWeightCollection()
+    for (name <- weights1.col.keys) {
+      assert(weights1.col(name).length == weights2.col(name).length)
+      val layer = weights1.col(name) zip weights2.col(name) map {
+        case (a,b) => {
+          assert(a.shape.deep == b.shape.deep)
+          FloatNDArray.plus(a,b)
         }
-        newWeights(name) += FloatNDArray.plus(weights1(name)(j), weights2(name)(j))
       }
+      newWeights.col += (name -> layer)
     }
     newWeights
   }
