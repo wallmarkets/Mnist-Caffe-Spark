@@ -31,20 +31,20 @@ class CaffeSolver(solverParam: SolverParameter) {
   }
 
   def getBlobs(dataBlobNames: List[String] = List[String]()): Map[String, FloatNDArray] = {
-    val outputs = Map[String, FloatNDArray]()
-    for (name <- dataBlobNames) {
-      val floatBlob = caffeNet.blob_by_name(name)
-      if (floatBlob == null) {
-        throw new IllegalArgumentException("The net does not have a layer named " + name + ".\n")
-      }
-      outputs += (name -> FloatNDArray.floatBlobToNDArray(floatBlob))
+    val outputs = dataBlobNames map {
+      case name => 
+        val floatBlob = caffeNet.blob_by_name(name)
+        if (floatBlob == null) {
+          throw new IllegalArgumentException("The net does not have a layer named " + name + ".\n")
+        }
+      (name -> FloatNDArray.floatBlobToNDArray(floatBlob))
     }
-    return outputs
+    outputs.toMap
   }
 
   def getWeights(): CaffeWeightCollection = {
     val weights = 
-      (0 until numLayers) { case i =>
+      (0 until numLayers) map { case i =>
         val blobs = caffeNet.layers().get(i).blobs()
         val weightList = 
           (0 until numLayerBlobs(i)) map { case j =>
@@ -54,16 +54,16 @@ class CaffeSolver(solverParam: SolverParameter) {
             blob.cpu_data.get(data, 0, data.length)
             FloatNDArray(data, shape)
           }
-        (layerNames(i), weightList)
+        (layerNames(i) -> weightList.toArray)
       }
     CaffeWeightCollection(weights)
   }
 
   def setWeights(weights: CaffeWeightCollection) = {
-    assert(weights.col.keys.size == numLayers)
+    assert(weights.numLayers == numLayers)
     for (i <- 0 to numLayers - 1) {
       val blobs = caffeNet.layers().get(i).blobs()
-      val layer = weights.col(layerNames(i))
+      val layer = weights.layer(layerNames(i))
       for (j <- 0 to numLayerBlobs(i) - 1) {
         val source = layer(j)
         // var shape = FloatNDArray.getFloatBlobShape(blob).deep

@@ -126,7 +126,7 @@ object MnistApp {
       netWeights = workers.map(caffeSolver => { caffeSolver.instance.getWeights() }).reduce((a, b) => CaffeWeightCollection.add(a, b))
       // and calculate the average.
       CaffeWeightCollection.scalarDivide(netWeights, 1F * numWorkers)
-      logger.log("weight = " + netWeights("conv1")(0).data.getFloat(0).toString, i)
+      logger.log("weight = " + netWeights.layer("conv1")(0).data.getFloat(0).toString, i)
 
       // re-shuffle of the data does not improve the converge speed...
       // logger.log("shuffle the data...", i)
