@@ -33,8 +33,8 @@ class Solver(val args: Array[String], val home: String) extends Serializable {
 object MnistApp {
   val trainBatchSize = 64
   val testBatchSize  = 64
-  val num_batches_per_iter = 10
-  val num_iters_per_round = 10
+  val num_batches_per_iter = 700
+  val num_iters_per_round = 1
 
   def main(args: Array[String]) {
 
@@ -130,9 +130,9 @@ object MnistApp {
 
       // re-shuffle of the data does not improve the converge speed...
       // logger.log("shuffle the data...", i)
-      // trainRDD = trainRDD.repartition(numWorkers)
-      // trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true)
-      // trainPartitionMem   = trainRDD.mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true)
+      trainRDD = trainRDD.repartition(numWorkers)
+      trainPartitionSizes = trainRDD.mapPartitions(iter => Iterator.single(iter.size), true)
+      trainPartitionMem   = trainRDD.mapPartitions(iter => Iterator.single(makeFloatPointer(iter)), true)
 
       i += 1
     }
