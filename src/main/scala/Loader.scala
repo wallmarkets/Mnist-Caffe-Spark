@@ -34,7 +34,7 @@ object Loader {
     var i = 0
     for (i <- 0 until numImages) {
       stream.read(imageBuffer)
-      images(i) = imageBuffer.map(e => (e.toFloat / 255) - 0.5F)
+      images(i) = imageBuffer.map(e => ((e & 0xFF).toFloat / 255) - 0.5F)
     }
     images
   }
