@@ -66,9 +66,10 @@ class CaffeSolver(solverParam: SolverParameter) {
     for (i <- 0 to numLayers - 1) {
       for (j <- 0 to numLayerBlobs(i) - 1) {
         val blob = caffeNet.layers().get(i).blobs().get(j)
-        val shape = FloatNDArray.getFloatBlobShape(blob)
-        assert(shape.deep == weights(layerNames(i))(j).shape.deep) // check that weights are the correct shape
-        val flatWeights = weights(layerNames(i))(j).data
+        val source = weights(layerNames(i))(j)
+        // var shape = FloatNDArray.getFloatBlobShape(blob).deep
+        // assert(shape == source.shape.deep) // check that weights are the correct shape
+        val flatWeights = source.asFloat
         blob.mutable_cpu_data.put(flatWeights, 0, flatWeights.length)
       }
     }

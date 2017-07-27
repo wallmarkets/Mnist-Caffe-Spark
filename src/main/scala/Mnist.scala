@@ -1,8 +1,10 @@
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.SparkSession
 import org.bytedeco.javacpp.caffe._
-import org.bytedeco.javacpp.{Pointer, IntPointer, PointerPointer, FloatPointer}
-
+import org.bytedeco.javacpp.{BytePointer, FloatPointer}
+import java.io.{FileInputStream, File}
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 //
 // Solver wraps a lazy creation of CaffeSolver. In this way, a solver
 // instance can be serialized and the wrapped CaffeSolver will be
@@ -10,7 +12,6 @@ import org.bytedeco.javacpp.{Pointer, IntPointer, PointerPointer, FloatPointer}
 //
 class Solver(val args: Array[String], val home: String) extends Serializable {
   // keep netParam and solverParam as a member here, so that they won't be GC'ed.
-  lazy val netParam = new NetParameter()
   lazy val solverParam = new SolverParameter()
   lazy val instance = {
     // import org.bytedeco.javacpp.Loader
@@ -21,10 +22,8 @@ class Solver(val args: Array[String], val home: String) extends Serializable {
     // val pargv = new PointerPointer(Array(argv) : _*)
     //GlobalInit(pargc, pargv)
  
-    ReadProtoFromTextFileOrDie(home + "/model/mnist_net.prototxt", netParam)
     ReadSolverParamsFromTextFileOrDie(home + "/model/mnist_solver.prototxt", solverParam)
-    solverParam.clear_net()
-    solverParam.set_allocated_net_param(netParam)
+    solverParam.set_net(home + "/model/mnist_net.prototxt")
     Caffe.set_mode(Caffe.CPU)
     val solver = new CaffeSolver(solverParam)
     solver
@@ -34,8 +33,8 @@ class Solver(val args: Array[String], val home: String) extends Serializable {
 object MnistApp {
   val trainBatchSize = 64
   val testBatchSize  = 64
-  val num_batches_per_iter = 5
-  val num_iters_per_round = 20
+  val num_batches_per_iter = 10
+  val num_iters_per_round = 10
 
   def main(args: Array[String]) {
 
@@ -99,7 +98,7 @@ object MnistApp {
         for (_ <- 1 to round) {
           testSolver.instance.Forward()
           val out = testSolver.instance.getBlobs(List("accuracy"))
-          accuracy += out("accuracy").data(0)
+          accuracy += out("accuracy").data.getFloat(0)
         }
         accuracy = accuracy / round
         logger.log("%.2f".format(100F * accuracy) + "% accuracy", i)
@@ -119,7 +118,7 @@ object MnistApp {
           // we run only <num_batches_per_iter> per iteration.
           caffeSolver.instance.Step(num_batches_per_iter)
           val t2 = System.currentTimeMillis()
-          print(s"iters took ${((t2 - t1) * 1F / 1000F).toString}s, # batches ${size / trainBatchSize}\n")
+          print(s"iters took ${((t2 - t1) * 1F / 1000F).toString}s, # batches ${size / trainBatchSize}\n")         
           Iterator.single(())
       }.count()
       logger.log("collecting weights", i)
@@ -127,7 +126,7 @@ object MnistApp {
       netWeights = workers.map(caffeSolver => { caffeSolver.instance.getWeights() }).reduce((a, b) => CaffeWeightCollection.add(a, b))
       // and calculate the average.
       CaffeWeightCollection.scalarDivide(netWeights, 1F * numWorkers)
-      logger.log("weight = " + netWeights("conv1")(0).data(0).toString, i)
+      logger.log("weight = " + netWeights("conv1")(0).data.getFloat(0).toString, i)
 
       // re-shuffle of the data does not improve the converge speed...
       // logger.log("shuffle the data...", i)
@@ -147,10 +146,26 @@ object MnistApp {
   // We need a piece of pinned storage.
   // 
   def makeFloatPointer(iter: Iterator[(Array[Float], Float)]): (FloatPointer, FloatPointer) = {
-    val (data, labl) = iter.toArray.unzip
-    val dataflatten = data.flatten
-    val datanativ   = new FloatPointer(dataflatten :_*)
-    val lablnativ   = new FloatPointer(labl :_*)
-    (datanativ, lablnativ)
+    val all = iter.toArray
+    val labllen = all.length
+    val datalen = all.map(_._1.length).sum
+
+    // copy each label to the working storage
+    // note that we have to advance the pointer manually
+    val lablnativ = new FloatPointer(labllen)
+    for (item <- all) {
+      lablnativ.put(item._2)
+      lablnativ.position(lablnativ.position()+1)
+    }
+
+    // copy each image to the working storage
+    // note that we have to advance the pointer manually
+    val datanativ = new FloatPointer(datalen)
+    for (item <- all) {
+      datanativ.put(item._1, 0, item._1.length)
+      datanativ.position(datanativ.position()+item._1.length)
+    }
+
+    (datanativ.position(0), lablnativ.position(0))
   }
 }

@@ -1,53 +1,55 @@
-import scala.math.Fractional
+// import scala.math.Fractional
 import org.bytedeco.javacpp.caffe.FloatBlob
+import org.nd4s.Implicits._
+import org.nd4j.linalg.api.ndarray.INDArray
+import org.nd4j.linalg.factory.Nd4j
 
-class FloatNDArray(val data: Array[Float], val shape: Array[Int]) extends java.io.Serializable {
-    assert(data.length == FloatNDArray.shapeSize(shape))
+class FloatNDArray(val data: INDArray) extends java.io.Serializable {
 
     def scalarDivide(v: Float) {
-        for (i <- data.indices) 
-            data(i) = data(i) / v
+        data /= v
     }
 
     def plus(other: FloatNDArray) {
-        assert(shape.deep == other.shape.deep)
-        for (i <- data.indices) 
-            data(i) = data(i) + other.data(i)
+        data += other.data
     }
+
+    def shape: Array[Int] = data.shape()
+
+    def asFloat: Array[Float] = data.data().asFloat()
 }
 
 object FloatNDArray {
     def apply(shape: Array[Int]) = {
-        val data = Array.fill(shapeSize(shape))(0) : Array[Float]
-        new FloatNDArray(data, shape)
+        new FloatNDArray(Nd4j.zeros(shape : _*))
     }
 
     def apply(data: Array[Float], shape: Array[Int]) = {
-        new FloatNDArray(data, shape)
+        new FloatNDArray(Nd4j.create(data, shape))
     }
 
-    def shapeSize(shape: Array[Int]) = shape.product
-
     def plus(a: FloatNDArray, b: FloatNDArray) = {
-        assert(a.shape.deep == b.shape.deep)
-        val result = FloatNDArray(a.shape)
-        result.plus(a)
-        result.plus(b)
-        result
+        new FloatNDArray(a.data + b.data)
     }
 
     def getFloatBlobShape(blob: FloatBlob): Array[Int] = {
         val numAxes = blob.num_axes()
-        val shape = new Array[Int](numAxes)
-        for (k <- 0 to numAxes - 1) {
-           shape(k) = blob.shape.get(k)
+        numAxes match {
+            case 0 => Array(1)
+            case 1 => Array(1, blob.shape.get(0))
+            case n => {
+                val shape = new Array[Int](numAxes)
+                for (k <- 0 to numAxes - 1) {
+                    shape(k) = blob.shape.get(k)
+                }
+                shape                
+            }
         }
-        shape
     }
 
     def floatBlobToNDArray(blob: FloatBlob): FloatNDArray = {
         val shape = getFloatBlobShape(blob)
-        val data = new Array[Float](shapeSize(shape))
+        val data = new Array[Float](shape.product)
         blob.cpu_data.get(data)
         FloatNDArray(data, shape)
     }
