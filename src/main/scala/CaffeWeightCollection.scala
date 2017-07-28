@@ -1,43 +1,44 @@
-import scala.collection.Map
 
-class CaffeWeightCollection(private val col: Map[String, Array[FloatNDArray]]) extends Serializable {
+class CaffeWeightCollection(private val col: Array[(String, Array[FloatNDArray])]) extends Serializable {
   def layer(name: String): Array[FloatNDArray] = {
-    col(name)
+    col.find(_._1 == name).get._2
   }
-  def numLayers = col.keys.size
+  def numLayers = col.length
 }
 
 object CaffeWeightCollection {
   
   def apply(): CaffeWeightCollection = {
-    new CaffeWeightCollection(Map[String, Array[FloatNDArray]]())
+    new CaffeWeightCollection(Array())
   }
 
-  def apply(seq: Iterable[(String, Array[FloatNDArray])]): CaffeWeightCollection = {
-    new CaffeWeightCollection(seq.toMap)
+  def apply(iter: Iterable[(String, Array[FloatNDArray])]): CaffeWeightCollection = {
+    new CaffeWeightCollection(iter.toArray)
   }
 
   def scalarDivide(weights: CaffeWeightCollection, v: Float): Unit = {
-    for (layer <- weights.col.values) {
-      for (param <- layer) {
+    for (layer <- weights.col) {
+      for (param <- layer._2) {
         param.scalarDivide(v)
       }
     }
   }
 
   def add(weights1: CaffeWeightCollection, weights2: CaffeWeightCollection): CaffeWeightCollection = {
-    assert(weights1.col.keys == weights2.col.keys)
+    assert(weights1.numLayers == weights2.numLayers)
     val newWeights = 
-      weights1.col.keys map {
-        case name => 
-          assert(weights1.col(name).length == weights2.col(name).length)
-          val layer = weights1.col(name) zip weights2.col(name) map {
+      weights1.col.indices map {
+        case ind => 
+          val (name1, layer1) = weights1.col(ind)
+          val (name2, layer2) = weights2.col(ind)
+          assert(name1 == name2)
+          val layer = layer1 zip layer2 map {
             case (a,b) => {
               assert(a.shape.deep == b.shape.deep)
               FloatNDArray.plus(a,b)
             }
           }
-          (name, layer)
+          (name1, layer)
       }
     CaffeWeightCollection(newWeights)
   }
