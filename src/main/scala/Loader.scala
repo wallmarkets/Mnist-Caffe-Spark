@@ -6,7 +6,6 @@ class Loader(path: String) {
   val trainImages = Loader.getImages(getPath("train-images-idx3-ubyte"))
   val trainLabels = Loader.getLabels(getPath("train-labels-idx1-ubyte"))
   val testImages  = Loader.getImages(getPath("t10k-images-idx3-ubyte"))
-  val testLabels  = Loader.getLabels(getPath("t10k-labels-idx1-ubyte"))
 
 }
 
